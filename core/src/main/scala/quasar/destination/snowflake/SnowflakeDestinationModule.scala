@@ -97,6 +97,7 @@ object SnowflakeDestinationModule extends DestinationModule {
         hygienicIdent,
         cfg.retryTransactionTimeout,
         cfg.maxRetries,
+        cfg.stagingFileSize,
         blocker,
         logger): Destination[F]
     }

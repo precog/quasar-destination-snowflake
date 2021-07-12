@@ -25,6 +25,7 @@ import quasar.connector.destination.{WriteMode => QWriteMode}
 import quasar.lib.jdbc.Slf4sLogHandler
 import quasar.lib.jdbc.destination.WriteMode
 
+import cats.~>
 import cats.data.ValidatedNel
 import cats.effect._
 import cats.effect.concurrent.Ref
@@ -49,11 +50,13 @@ object TempTable {
     def build(connection: SnowflakeConnection, blocker: Blocker): Resource[F, TempTable[F]]
   }
 
-  def builder[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr](
+  def builder[F[_]: ConcurrentEffect: ContextShift: Timer: MonadResourceErr](
       writeMode: WriteMode,
       schema: String,
       hygienicIdent: String => String,
+      retry: ConnectionIO ~> ConnectionIO,
       args: Flow.Args,
+      stagingParams: StageFile.Params,
       xa: Transactor[F],
       logger: Logger)
       : F[Builder[F]] = {
@@ -105,12 +108,12 @@ object TempTable {
         fr0"." ++
         Fragment.const0(hygienicIdent(tbl))
 
-      def ingestFragment(stage: StageFile): Fragment =
-        fr"COPY INTO" ++ tmpFragment ++ fr0" FROM" ++ stage.fragment ++
+      def ingestFragment(sf: StageFile): Fragment =
+        fr"COPY INTO" ++ tmpFragment ++ fr0" FROM " ++ sf.fragment
         fr""" file_format = (type = csv, skip_header = 0, field_optionally_enclosed_by = '"', escape = none, escape_unenclosed_field = none)"""
 
       def runFragment: Fragment => ConnectionIO[Unit] = { fr =>
-        fr.updateWithLogHandler(log).run.void
+        retry(fr.updateWithLogHandler(log).run.void)
       }
 
       def execFragment: Fragment => F[Unit] =
@@ -135,16 +138,20 @@ object TempTable {
         val tempTable =
           new TempTable[F] {
 
-            def ingest[A]: Pipe[F, Region[F, A], A] = _.flatMap { (region: Region[F, A]) => Stream.force {
-              StageFile(region.data, connection, blocker, xa, logger) use { sf =>
-                for {
-                  size <- region.commitCount
-                  _ <- {
-                    execFragment(ingestFragment(sf)) >> persist
-                  }.whenA(size > 0)
-                } yield region.commits
+            def ingest[A]: Pipe[F, Region[F, A], A] = _.flatMap { (region: Region[F, A]) =>
+              val nestedStream = Stream.force {
+                StageFile.files(region.data, connection, blocker, xa, logger, stagingParams) use { sfs =>
+                  for {
+                    size <- region.commitCount
+                    _ <-  {
+                      sfs.traverse_(x => execFragment(ingestFragment(x))) >>
+                      persist
+                    }.whenA(size > 0)
+                  } yield region.commits
+                }
               }
-            }}
+              nestedStream
+            }
 
             def persist = refMode.get flatMap {
               case QWriteMode.Replace =>

@@ -93,15 +93,17 @@ object Flow {
     private def create(path: ResourcePath, cols: NonEmptyList[FlowColumn])
         : (RenderConfig[Byte], Pipe[F, Byte, Unit]) = {
       val args = Args.ofCreate(path, cols)
-      (render, (in: Stream[F, Byte]) => Stream.resource {
-        for {
-          xa <- transactor
-          connection <- Resource.eval(unwrap(classOf[SnowflakeConnection]).transact(xa))
-          builder <- tableBuilder(args, xa, logger)
-          region = Region.fromByteStream(in)
-          tempTable <- builder.build(connection, blocker)
-          _ <- tempTable.ingest(Stream(region)).compile.resource.drain
-        } yield ()
+      (render, (in: Stream[F, Byte]) => {
+        val nestedStream = Stream.resourceWeak {
+          for {
+            xa <- transactor
+            connection <- Resource.eval(unwrap(classOf[SnowflakeConnection]).transact(xa))
+            builder <- tableBuilder(args, xa, logger)
+            region = Region.fromByteStream(in)
+            tempTable <- builder.build(connection, blocker)
+          } yield tempTable.ingest(Stream(region))
+        }
+        nestedStream.flatten
       })
     }
 
@@ -120,7 +122,7 @@ object Flow {
     }
 
     private def upsertPipe[A](args: Args): Consume[DataEvent[Byte, *], A] = { events =>
-      val nestedStream = Stream.resource {
+      val nestedStream = Stream.resourceWeak {
         for {
           xa <- transactor
           connection <- Resource.eval(unwrap(classOf[SnowflakeConnection]).transact(xa))

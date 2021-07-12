@@ -458,7 +458,8 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
       warehouse = Warehouse,
       sanitizeIdentifiers = Some(true),
       retryTransactionTimeoutMs = Some(0),
-      maxTransactionReattempts = Some(0))
+      maxTransactionReattempts = Some(0),
+      stagingFileSizeMb = None)
 
   val hygienicIdent: String => String = inp => QueryGen.sanitizeIdentifier(inp, true)
 

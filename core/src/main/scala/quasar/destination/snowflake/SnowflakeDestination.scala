@@ -29,6 +29,7 @@ import quasar.connector.MonadResourceErr
 import quasar.connector.destination._
 import quasar.connector.render.RenderConfig
 import quasar.lib.jdbc.destination.WriteMode
+import quasar.lib.jdbc.destination.flow.Retry
 
 import org.slf4s.Logger
 
@@ -41,6 +42,7 @@ final class SnowflakeDestination[F[_]: ConcurrentEffect: MonadResourceErr: Timer
     hygienicIdent: String => String,
     retryTimeout: FiniteDuration,
     maxRetries: Int,
+    stagingSize: Int,
     val blocker: Blocker,
     val logger: Logger)
     extends Flow.Sinks[F] with LegacyDestination[F] {
@@ -48,8 +50,22 @@ final class SnowflakeDestination[F[_]: ConcurrentEffect: MonadResourceErr: Timer
   def destinationType: DestinationType =
     SnowflakeDestinationModule.destinationType
 
-  def tableBuilder(args: Flow.Args, xa: Transactor[F], logger: Logger): Resource[F, TempTable.Builder[F]] =
-    Resource.eval(TempTable.builder[F](writeMode, schema, hygienicIdent, args, xa, logger))
+  def tableBuilder(args: Flow.Args, xa: Transactor[F], logger: Logger): Resource[F, TempTable.Builder[F]] = {
+    val stagingParams = StageFile.Params(
+      maxRetries = maxRetries,
+      timeout = retryTimeout,
+      maxFileSize = stagingSize)
+
+    Resource.eval(TempTable.builder[F](
+      writeMode,
+      schema,
+      hygienicIdent,
+      Retry[F](maxRetries, retryTimeout),
+      args,
+      stagingParams,
+      xa,
+      logger))
+  }
 
   def render: RenderConfig[Byte] = RenderConfig.Csv(includeHeader = false)
 
