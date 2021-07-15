@@ -21,7 +21,7 @@ import scala._
 
 import quasar.api.destination.DestinationError.InitializationError
 import quasar.api.destination.{DestinationError, DestinationType}
-import quasar.connector.MonadResourceErr
+import quasar.connector.{GetAuth, MonadResourceErr}
 import quasar.connector.destination.{Destination, DestinationModule, PushmiPullyu}
 import quasar.concurrent._
 import quasar.lib.jdbc.destination.WriteMode
@@ -62,7 +62,8 @@ object SnowflakeDestinationModule extends DestinationModule {
 
   def destination[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer](
       config: Json,
-      pushPull: PushmiPullyu[F])
+      pushPull: PushmiPullyu[F],
+      auth: GetAuth[F])
       : Resource[F, Either[InitErr, Destination[F]]] = {
 
 
