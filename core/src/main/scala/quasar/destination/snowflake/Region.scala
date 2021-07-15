@@ -71,10 +71,12 @@ object Region {
   def regionPipe[F[_]: Concurrent, A]: Pipe[F, DataEvent[Byte, A], Region[F, A]] = {
     inp => for {
       resQ <- Stream.eval(Queue.boundedNoneTerminated[F, Region[F, A]](ResultQueueSize))
-      regionAccum <- Stream.eval(Ref.of[F, Option[RegionState[F, A]]](None))
+      initRegion <- Stream.eval(RegionState[F, A])
+      regionAccum <- Stream.eval(Ref.of[F, RegionState[F, A]](initRegion))
+      _ <- Stream.eval(resQ.enqueue1(initRegion.toRegion.some))
       results <- resQ.dequeue.concurrently {
         val inpWithFinalizer = inp.onFinalize[F] {
-          regionAccum.get.flatMap(_.traverse_(_.stop)) >>
+          regionAccum.get.flatMap(_.stop) >>
           resQ.enqueue1(None)
         }
         inpWithFinalizer.through(regionPipeEnqueue(resQ, regionAccum))
@@ -84,22 +86,20 @@ object Region {
 
   private def regionPipeEnqueue[F[_]: Concurrent, A](
       resQ: NoneTerminatedQueue[F, Region[F, A]],
-      regionAccum: Ref[F, Option[RegionState[F, A]]])
+      regionAccum: Ref[F, RegionState[F, A]])
       : Pipe[F, DataEvent[Byte, A], Unit] = {
 
     def startRegion(chunk: Chunk[Byte]): F[Unit] = for {
-      _ <- regionAccum.get.flatMap(_.traverse(_.stop))
+      _ <- regionAccum.get.flatMap(_.stop)
       newRegionState <- RegionState[F, A]
       _ <- newRegionState.elements.enqueue1(chunk.some)
-      _ <- regionAccum.set(newRegionState.some)
+      _ <- regionAccum.set(newRegionState)
       _ <- resQ.enqueue1(newRegionState.toRegion.some)
     } yield ()
 
     _.evalMap {
-      case DataEvent.Create(chunk) => regionAccum.get flatMap {
-        case None =>
-          startRegion(chunk)
-        case Some(rr) => rr.collecting.get.ifM(
+      case DataEvent.Create(chunk) => regionAccum.get flatMap { rr =>
+        rr.collecting.get.ifM(
           rr.elements.enqueue1(chunk.some),
           startRegion(chunk))
       }
@@ -107,12 +107,9 @@ object Region {
       case DataEvent.Delete(_) =>
         ().pure[F]
 
-      case DataEvent.Commit(offset) => regionAccum.get flatMap {
-        case None =>
-          Sync[F].raiseError[Unit](new RuntimeException("Commit data event appeared before create"))
-        case Some(rr) =>
-          rr.commits.enqueue1(offset.some) >>
-          rr.collecting.set(false)
+      case DataEvent.Commit(offset) => regionAccum.get flatMap { rr =>
+        rr.commits.enqueue1(offset.some) >>
+        rr.collecting.set(false)
       }
     }
   }
