@@ -21,6 +21,7 @@ import scala._
 
 import quasar.api.destination.DestinationError.InitializationError
 import quasar.api.destination.{DestinationError, DestinationType}
+import quasar.concurrent._
 import quasar.connector.MonadResourceErr
 import quasar.connector.destination.{Destination, DestinationModule, PushmiPullyu}
 import quasar.concurrent._
@@ -77,6 +78,7 @@ object SnowflakeDestinationModule extends DestinationModule {
       logger <- EitherT.right[InitializationError[Json]]{
         Resource.eval(Sync[F].delay(LoggerFactory(s"quasar.lib.destination.snowflake-$poolSuffix")))
       }
+      blocker <- EitherT.right[InitializationError[Json]](Blocker.cached("snowflake-destination"))
     } yield {
       val hygienicIdent: String => String = inp =>
         QueryGen.sanitizeIdentifier(inp, cfg.sanitizeIdentifiers.getOrElse(true))
@@ -104,11 +106,6 @@ object SnowflakeDestinationModule extends DestinationModule {
 
     init.value
   }
-
-  private def blocker: Blocker =
-    Blocker.liftExecutionContext(
-      ExecutionContext.fromExecutor(
-        Executors.newCachedThreadPool(NamedDaemonThreadFactory("snowflake-destination"))))
 
   private def boundedPool[F[_]: Sync](name: String, threadCount: Int): Resource[F, ExecutionContext] =
     Resource.make(
