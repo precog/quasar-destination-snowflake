@@ -100,7 +100,7 @@ object StageFile {
         case Left(_) if params.maxRetries > tried =>
           Resource.eval(q.enqueue1(none[Chunk[Byte]])) >>
           Resource.eval(Timer[F].sleep(params.timeout)) >>
-          retryable(q.dequeue.flatMap(Stream.chunk) ++ input, connection, blocker, xa, logger, tried + 1, params)
+          retryable(q.dequeue.flatMap(Stream.chunk) ++ copiedInp, connection, blocker, xa, logger, tried + 1, params)
         case Left(e) =>
           Resource.eval(Sync[F].raiseError(e))
         case Right(a) =>
