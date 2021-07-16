@@ -89,24 +89,36 @@ object StageFile {
       logger: Logger,
       tried: Int,
       params: Params)
-      : Resource[F, StageFile] =
-    Resource.eval(Queue.noneTerminated[F, Chunk[Byte]]).flatMap { q =>
-      // IIUC, it's not good idea to run stream with _.through(q.enqueue) concurrently, since
-      // it might not finalize the queue
-      val copiedInp = input observe {
-        _.chunks.map(_.some).onFinalize(q.enqueue1(none[Chunk[Byte]])).through(q.enqueue)
-      }
-      StageFile[F](copiedInp, connection, blocker, xa, logger).attempt flatMap {
+      : Resource[F, StageFile] = for {
+    // First we need two copies of input stream
+    // one because on error in `StageFile` the stream is terminated
+    direct <- Resource.eval(Queue.noneTerminated[F, Chunk[Byte]])
+    // one to reuse it on error
+    fallback <- Resource.eval(Queue.noneTerminated[F, Chunk[Byte]])
+    // Then, since we don't want input stream to terminate but put all its data
+    // into both `direct` and `fallback` we need to `spawn` the stream
+    // the fiber will be joined in this resource finalizer.
+    _ <- input
+      .chunks
+      .evalTap(x => direct.enqueue1(Some(x)) >> fallback.enqueue1(Some(x)))
+      .onFinalize(direct.enqueue1(None) >> fallback.enqueue1(None))
+      .spawn
+      .compile
+      .resource
+      .lastOrError
+
+    res <-
+      StageFile[F](direct.dequeue.flatMap(Stream.chunk), connection, blocker, xa, logger).attempt flatMap {
         case Left(_) if params.maxRetries > tried =>
-          Resource.eval(q.enqueue1(none[Chunk[Byte]])) >>
           Resource.eval(Timer[F].sleep(params.timeout)) >>
-          retryable(q.dequeue.flatMap(Stream.chunk) ++ copiedInp, connection, blocker, xa, logger, tried + 1, params)
+          retryable(fallback.dequeue.flatMap(Stream.chunk), connection, blocker, xa, logger, tried + 1, params)
         case Left(e) =>
           Resource.eval(Sync[F].raiseError(e))
         case Right(a) =>
           a.pure[Resource[F, *]]
       }
-    }
+
+  } yield res
 
   // It would be much clearer if we could use `_.flatMap(Stream.resourceWeak(StageFile(...)))`
   // and then `files.compile.resource.toList` but the second finalizes resources before `eval`
