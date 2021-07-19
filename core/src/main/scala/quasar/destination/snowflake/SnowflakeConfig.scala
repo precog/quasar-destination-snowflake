@@ -35,7 +35,8 @@ final case class SnowflakeConfig(
   warehouse: String,
   sanitizeIdentifiers: Option[Boolean],
   retryTransactionTimeoutMs: Option[Int],
-  maxTransactionReattempts: Option[Int]) { self =>
+  maxTransactionReattempts: Option[Int],
+  stagingFileSizeMb: Option[Int]) { self =>
 
   def sanitize: SnowflakeConfig =
     self.copy(user = SnowflakeConfig.Redacted, password = SnowflakeConfig.Redacted)
@@ -45,6 +46,9 @@ final case class SnowflakeConfig(
 
   val maxRetries: Int =
     maxTransactionReattempts getOrElse SnowflakeConfig.DefaultMaxReattempts
+
+  val stagingFileSize: Int =
+    stagingFileSizeMb getOrElse SnowflakeConfig.DefaultStagingFileSize
 
   val jdbcUri: String =
     s"${SnowflakeConfig.SnowflakeUriSchema}://${accountName}.${SnowflakeConfig.SnowflakeDomain}/?db=${databaseName}&schema=${schema}&warehouse=${warehouse}&CLIENT_SESSION_KEEP_ALIVE=true&AUTOCOMMIT=false"
@@ -56,9 +60,10 @@ object SnowflakeConfig {
   val DefaultMaxReattempts = 10
   val SnowflakeUriSchema = "jdbc:snowflake"
   val SnowflakeDomain = "snowflakecomputing.com"
+  val DefaultStagingFileSize = 4096
 
   implicit val snowflakeConfigCodecJson: CodecJson[SnowflakeConfig] =
-    casecodec10(SnowflakeConfig.apply, SnowflakeConfig.unapply)(
+    casecodec11(SnowflakeConfig.apply, SnowflakeConfig.unapply)(
       "writeMode",
       "accountName",
       "user",
@@ -68,5 +73,7 @@ object SnowflakeConfig {
       "warehouse",
       "sanitizeIdentifiers",
       "retryTransactionTimeoutMs",
-      "maxTransactionReattempts")
+      "maxTransactionReattempts",
+      "stagingFileSizeMb")
+
 }

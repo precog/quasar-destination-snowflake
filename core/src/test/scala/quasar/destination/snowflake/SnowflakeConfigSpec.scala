@@ -35,7 +35,8 @@ object SnowflakeConfigSpec extends Specification {
         "warehouse" := "warehouse name",
         "sanitizeIdentifiers" := "false",
         "retryTransactionTimeoutMs" := 1000,
-        "maxTransactionReattempts" := 20)
+        "maxTransactionReattempts" := 20,
+        "stagingFileSizeMb" := 2048)
 
 
       testConfig.as[SnowflakeConfig].result must beRight(
@@ -49,7 +50,8 @@ object SnowflakeConfigSpec extends Specification {
           "warehouse name",
           Some(false),
           Some(1000),
-          Some(20)))
+          Some(20),
+          Some(2048)))
     }
   }
 
@@ -65,6 +67,7 @@ object SnowflakeConfigSpec extends Specification {
           Some("public"),
           "warehouse name",
           Some(true),
+          None,
           None,
           None)
 

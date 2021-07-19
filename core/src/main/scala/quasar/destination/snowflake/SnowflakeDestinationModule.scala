@@ -21,12 +21,12 @@ import scala._
 
 import quasar.api.destination.DestinationError.InitializationError
 import quasar.api.destination.{DestinationError, DestinationType}
+import quasar.concurrent._
 import quasar.connector.{GetAuth, MonadResourceErr}
 import quasar.connector.destination.{Destination, DestinationModule, PushmiPullyu}
 import quasar.concurrent._
 import quasar.lib.jdbc.destination.WriteMode
 
-import java.sql.SQLException
 import java.util.concurrent.Executors
 
 import scala.concurrent.ExecutionContext
@@ -34,18 +34,14 @@ import scala.util.{Either, Random}
 
 import argonaut._, Argonaut._
 
-import cats.MonadError
 import cats.data.EitherT
 import cats.effect._
-import cats.implicits._
 
-import doobie._
-import doobie.implicits._
 import doobie.hikari.HikariTransactor
 
 import org.slf4s.LoggerFactory
 
-import scalaz.NonEmptyList
+import java.util.concurrent.Executors
 
 object SnowflakeDestinationModule extends DestinationModule {
 
@@ -80,23 +76,22 @@ object SnowflakeDestinationModule extends DestinationModule {
 
       jdbcUri = cfg.jdbcUri
 
-      transactor <- EitherT.right[InitErr](
+      logger <- EitherT.right[InitializationError[Json]]{
+        Resource.eval(Sync[F].delay(LoggerFactory(s"quasar.lib.destination.snowflake-$poolSuffix")))
+      }
+      blocker <- EitherT.right[InitializationError[Json]](Blocker.cached("snowflake-destination"))
+    } yield {
+      val hygienicIdent: String => String = inp =>
+        QueryGen.sanitizeIdentifier(inp, cfg.sanitizeIdentifiers.getOrElse(true))
+
+      val transactor =
         HikariTransactor.newHikariTransactor[F](
           SnowflakeDriverFqcn,
           jdbcUri,
           cfg.user,
           cfg.password,
           connectPool,
-          transactPool))
-
-      _ <- isLive(transactor, config)
-
-      logger <- EitherT.right[InitializationError[Json]]{
-        Resource.eval(Sync[F].delay(LoggerFactory(s"quasar.lib.destination.snowflake-$poolSuffix")))
-      }
-    } yield {
-      val hygienicIdent: String => String = inp =>
-        QueryGen.sanitizeIdentifier(inp, cfg.sanitizeIdentifiers.getOrElse(true))
+          transactPool)
 
       new SnowflakeDestination(
         transactor,
@@ -105,42 +100,12 @@ object SnowflakeDestinationModule extends DestinationModule {
         hygienicIdent,
         cfg.retryTransactionTimeout,
         cfg.maxRetries,
+        cfg.stagingFileSize,
+        blocker,
         logger): Destination[F]
     }
 
     init.value
-  }
-
-
-  private def isLive[F[_]: Sync](xa: Transactor[F], config: Json)
-      : EitherT[Resource[F, ?], InitErr, Unit] = {
-    val MER = MonadError[Resource[F, ?], Throwable]
-
-    MER.attemptT(fr0"SELECT current_version()"
-      .query[Unit].stream.transact(xa).compile.resource.drain) leftSemiflatMap {
-
-      case (ex: SQLException) if ex.getErrorCode === ErrorCode.AccessDenied =>
-        DestinationError.accessDenied(
-          (destinationType, sanitizeDestinationConfig(config), ex.getSQLState)).pure[Resource[F, ?]]
-
-      case (ex: SQLException) if ex.getErrorCode === ErrorCode.ConnectionFailed =>
-        DestinationError.connectionFailed(
-          (destinationType, sanitizeDestinationConfig(config), ex)).pure[Resource[F, ?]]
-
-      case (ex: SQLException) =>
-        DestinationError.invalidConfiguration(
-          (destinationType,
-            sanitizeDestinationConfig(config),
-            NonEmptyList(ex.getMessage, ex.getErrorCode.toString, ex.getSQLState)))
-          .pure[Resource[F, ?]]
-
-      case ex => MER.raiseError(ex)
-    }
-  }
-
-  private object ErrorCode {
-    val AccessDenied: Int = 390100
-    val ConnectionFailed: Int = 200015
   }
 
   private def boundedPool[F[_]: Sync](name: String, threadCount: Int): Resource[F, ExecutionContext] =

@@ -95,17 +95,6 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
           case _ => ko("Expected a malformed configuration")
       }})
     }
-
-    "fail when unable to connect to database" >>* {
-      val cfg = config.copy(accountName = "incorrect").asJson
-
-      dest(cfg)(r => IO.pure {
-        r match {
-          case Left(_) =>
-            ok
-          case _ => ko("Expected a connection failed or access denied")
-      }})
-    }
   }
 
   "seek sinks (upsert and append)" should {
@@ -457,9 +446,7 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
         .attempt
         .map(_ must beLeft)
     }
-
   }
-
 
   def config: SnowflakeConfig = SnowflakeConfig(
       writeMode = None,
@@ -471,7 +458,8 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
       warehouse = Warehouse,
       sanitizeIdentifiers = Some(true),
       retryTransactionTimeoutMs = Some(0),
-      maxTransactionReattempts = Some(0))
+      maxTransactionReattempts = Some(10),
+      stagingFileSizeMb = None)
 
   val hygienicIdent: String => String = inp => QueryGen.sanitizeIdentifier(inp, true)
 
