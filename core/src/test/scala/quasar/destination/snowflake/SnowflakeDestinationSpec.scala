@@ -82,7 +82,6 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
     Account.isEmpty || Password.isEmpty || User.isEmpty || Database.isEmpty || Schema.isEmpty || Warehouse.isEmpty
 
   skipAllIf(shouldSkip)
-
   "initialization" should {
     "fail with malformed config when not decodable" >>* {
       val cfg = Json("malformed" := true)
@@ -102,8 +101,8 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
       val events =
         Stream(
           UpsertEvent.Create(List(
-            ("x" ->> "foo") :: ("y" ->> "bar") :: HNil,
-            ("x" ->> "baz") :: ("y" ->> "qux") :: HNil)),
+            ("x" ->> "f,oo") :: ("y" ->> "bar") :: HNil,
+            ("x" ->> "b\naz") :: ("y" ->> "qux") :: HNil)),
           UpsertEvent.Commit("commit1"))
 
       for {
@@ -111,8 +110,8 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
         (values, offsets) <- consumer(tbl, toOpt(Column("x", ColumnType.String)), QWriteMode.Replace, events)
         } yield {
           values must_== List(
-            "foo" :: "bar" :: HNil,
-            "baz" :: "qux" :: HNil)
+            "f,oo" :: "bar" :: HNil,
+            "b\naz" :: "qux" :: HNil)
         }
     }
 
