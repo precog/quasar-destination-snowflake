@@ -67,7 +67,7 @@ final class SnowflakeDestination[F[_]: ConcurrentEffect: MonadResourceErr: Timer
       logger))
   }
 
-  def render: RenderConfig[Byte] = RenderConfig.Csv(includeHeader = false)
+  def render: RenderConfig[Byte] = RenderConfig.Csv(includeHeader = false, includeBom = false)
 
   val sinks: NonEmptyList[ResultSink[F, ColumnType.Scalar]] =
     flowSinks
