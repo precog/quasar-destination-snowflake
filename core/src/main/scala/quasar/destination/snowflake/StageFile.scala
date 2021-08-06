@@ -16,7 +16,6 @@
 
 package quasar.destination.snowflake
 
-import scala.Predef.classOf
 import slamdata.Predef._
 
 import cats.effect._
@@ -59,10 +58,8 @@ object StageFile {
       logger: Logger)
       : Resource[F, StageFile] = {
 
-    def inputStream = {
-      println(s"input : $input")
+    def inputStream =
       Files.newInputStream(input)
-    }
 
     val debug = (s: String) => Sync[F].delay(logger.debug(s))
 
@@ -73,20 +70,19 @@ object StageFile {
       def name = uniqueName
     }
 
-    def ingest(sf: StageFile): F[StageFile] = rxa use { xa =>
+    def ingest(sf: StageFile): F[StageFile] =
       for {
         connection <- unwrap(classOf[SnowflakeConnection]).transact(xa)
         _ <- debug(s"Starting staging to file: @~/${sf.name}")
         _ <- blocker.delay[F, Unit](connection.uploadStream("@~", "/", inputStream, sf.name, Compressed))
         _ <- debug(s"Finished staging to file: @~/${sf.name}")
       } yield sf
-    }
 
-    val release: StageFile => F[Unit] = sf => Sync[F].defer { rxa.use { xa =>
+    val release: StageFile => F[Unit] = sf => Sync[F].defer {
       val fragment = fr"rm" ++ sf.fragment
       debug(s"Cleaning staging file @~/${sf.name} up") >>
       fragment.query[Unit].option.void.transact(xa)
-    }}
+    }
 
     Resource.make(acquire)(release).evalMap(ingest(_))
   }
@@ -94,15 +90,15 @@ object StageFile {
   def retryable[F[_]: ConcurrentEffect: ContextShift: Timer](
       input: Path,
       blocker: Blocker,
-      xa: Resource[F, Transactor[F]],
+      xa: Transactor[F],
       logger: Logger,
       tried: Int,
       params: Params)
       : Resource[F, StageFile] =
-    StageFile.fromPath(input, blocker, xa, logger).attempt flatMap {
+    StageFile.fromPath(input, connection, blocker, xa, logger).attempt flatMap {
       case Left(_) if params.maxRetries > tried =>
         Resource.eval(Timer[F].sleep(params.timeout)) >>
-        retryable(input, blocker, xa, logger, tried + 1, params)
+        retryable(input, connection, blocker, xa, logger, tried + 1, params)
       case Left(e) =>
         Resource.eval(Sync[F].raiseError(e))
       case Right(a) =>
@@ -114,13 +110,13 @@ object StageFile {
   def files[F[_]: ConcurrentEffect: ContextShift: Timer](
       in: Stream[F, Byte],
       blocker: Blocker,
-      xa: Resource[F, Transactor[F]],
+      xa: Transactor[F],
       logger: Logger,
       params: Params)
       : Resource[F, List[StageFile]] = {
     val resources = in.through(filePipe(params.maxFileSize * 1024L * 1024L, blocker))
       .map { p =>
-        retryable(p, blocker, xa, logger, 0, params).evalTap({ _ =>
+        retryable(p, connection, blocker, xa, logger, 0, params).evalTap({ _ =>
           file.delete[F](blocker, p)
         }).handleErrorWith({e => Resource.eval {
           file.delete[F](blocker, p).attempt >>
