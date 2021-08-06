@@ -17,7 +17,6 @@
 package quasar.destination.snowflake
 
 import slamdata.Predef._
-import scala.Predef.classOf
 
 import quasar.api.{Column, ColumnType}
 import quasar.api.push.OffsetKey
@@ -31,13 +30,9 @@ import cats.effect._
 import cats.implicits._
 
 import doobie._
-import doobie.free.connection.unwrap
-import doobie.implicits._
 
 import fs2.{Stream, Pipe}
 import fs2.concurrent.Queue
-
-import net.snowflake.client.jdbc.SnowflakeConnection
 
 import org.slf4s.Logger
 

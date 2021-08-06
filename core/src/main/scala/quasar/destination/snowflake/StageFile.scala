@@ -20,16 +20,13 @@ import scala.Predef.classOf
 import slamdata.Predef._
 
 import cats.effect._
-import cats.effect.concurrent.Ref
 import cats.implicits._
 
 import doobie._
 import doobie.implicits._
 import doobie.free.connection.unwrap
 
-import fs2.{Chunk, Pipe, Pull, Stream}
-import fs2.concurrent.{NoneTerminatedQueue, Queue}
-import fs2.io
+import fs2.{Pipe, Pull, Stream}
 import fs2.io.file
 import fs2.io.file.WriteCursor
 
@@ -59,10 +56,8 @@ object StageFile {
       logger: Logger)
       : Resource[F, StageFile] = {
 
-    def inputStream = {
-      println(s"input : $input")
+    def inputStream =
       Files.newInputStream(input)
-    }
 
     val debug = (s: String) => Sync[F].delay(logger.debug(s))
 

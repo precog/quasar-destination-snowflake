@@ -39,8 +39,6 @@ import fs2.{Pipe, Stream}
 
 import org.slf4s.Logger
 
-import net.snowflake.client.jdbc.SnowflakeConnection
-
 sealed trait TempTable[F[_]] {
   def ingest[A]: Pipe[F, Region[F, A], A]
 }
