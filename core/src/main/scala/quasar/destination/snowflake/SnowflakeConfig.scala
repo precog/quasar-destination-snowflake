@@ -60,7 +60,7 @@ object SnowflakeConfig {
   val DefaultMaxReattempts = 10
   val SnowflakeUriSchema = "jdbc:snowflake"
   val SnowflakeDomain = "snowflakecomputing.com"
-  val DefaultStagingFileSize = 512
+  val DefaultStagingFileSize = 4096
 
   implicit val snowflakeConfigCodecJson: CodecJson[SnowflakeConfig] =
     casecodec11(SnowflakeConfig.apply, SnowflakeConfig.unapply)(
