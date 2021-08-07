@@ -39,13 +39,15 @@ import fs2.{Pipe, Stream}
 
 import org.slf4s.Logger
 
+import net.snowflake.client.jdbc.SnowflakeConnection
+
 sealed trait TempTable[F[_]] {
   def ingest[A]: Pipe[F, Region[F, A], A]
 }
 
 object TempTable {
   sealed trait Builder[F[_]] {
-    def build(blocker: Blocker): Resource[F, TempTable[F]]
+    def build(connection: SnowflakeConnection, blocker: Blocker): Resource[F, TempTable[F]]
   }
 
   def builder[F[_]: ConcurrentEffect: ContextShift: Timer: MonadResourceErr](
@@ -55,7 +57,7 @@ object TempTable {
       retry: ConnectionIO ~> ConnectionIO,
       args: Flow.Args,
       stagingParams: StageFile.Params,
-      rxa: Resource[F, Transactor[F]],
+      xa: Transactor[F],
       logger: Logger)
       : F[Builder[F]] = {
     val log = Slf4sLogHandler(logger)
@@ -70,13 +72,13 @@ object TempTable {
         fragment.queryWithLogHandler[Int](log).option.map(_.exists(_ === 1))
 
       writeMode match {
-        case WriteMode.Create => rxa use { xa => existing.transact(xa) flatMap { exists =>
+        case WriteMode.Create => existing.transact(xa) flatMap { exists =>
           MonadResourceErr[F].raiseError(
             ResourceError.accessDenied(
               args.path,
               "Create mode is set but table exists already".some,
               none)).whenA(exists)
-        }}
+        }
         case _ =>
           ().pure[F]
       }
@@ -115,7 +117,7 @@ object TempTable {
       }
 
 
-      def build(blocker: Blocker): Resource[F, TempTable[F]] = rxa flatMap { xa =>
+      def build(connection: SnowflakeConnection, blocker: Blocker): Resource[F, TempTable[F]] = {
         val createFragment = {
           val prefix =
             if (writeMode === WriteMode.Replace)
@@ -139,7 +141,7 @@ object TempTable {
 
             def ingest[A]: Pipe[F, Region[F, A], A] = _.flatMap { (region: Region[F, A]) =>
               val nestedStream = Stream.force {
-                StageFile.files(region.data, blocker, rxa, logger, stagingParams) use { sfs =>
+                StageFile.files(region.data, connection, blocker, xa, logger, stagingParams) use { sfs =>
                   for {
                     size <- region.commitCount
                     _ <-  {

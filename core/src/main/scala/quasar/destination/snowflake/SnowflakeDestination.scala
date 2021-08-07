@@ -50,7 +50,7 @@ final class SnowflakeDestination[F[_]: ConcurrentEffect: MonadResourceErr: Timer
   def destinationType: DestinationType =
     SnowflakeDestinationModule.destinationType
 
-  def tableBuilder(args: Flow.Args, rxa: Resource[F, Transactor[F]], logger: Logger): Resource[F, TempTable.Builder[F]] = {
+  def tableBuilder(args: Flow.Args, xa: Transactor[F], logger: Logger): Resource[F, TempTable.Builder[F]] = {
     val stagingParams = StageFile.Params(
       maxRetries = maxRetries,
       timeout = retryTimeout,
@@ -63,7 +63,7 @@ final class SnowflakeDestination[F[_]: ConcurrentEffect: MonadResourceErr: Timer
       Retry[F](maxRetries, retryTimeout),
       args,
       stagingParams,
-      rxa,
+      xa,
       logger))
   }
 

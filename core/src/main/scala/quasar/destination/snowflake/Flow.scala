@@ -17,6 +17,7 @@
 package quasar.destination.snowflake
 
 import slamdata.Predef._
+import scala.Predef.classOf
 
 import quasar.api.{Column, ColumnType}
 import quasar.api.push.OffsetKey
@@ -30,6 +31,8 @@ import cats.effect._
 import cats.implicits._
 
 import doobie._
+import doobie.implicits._
+import doobie.free.connection.unwrap
 
 import fs2.{Stream, Pipe}
 import fs2.concurrent.Queue
@@ -37,6 +40,8 @@ import fs2.concurrent.Queue
 import org.slf4s.Logger
 
 import skolems.∀
+
+import net.snowflake.client.jdbc.SnowflakeConnection
 
 object Flow {
   private type FlowColumn = Column[ColumnType.Scalar]
@@ -75,7 +80,7 @@ object Flow {
     type Consume[E[_], A] =
       Pipe[F, E[OffsetKey.Actual[A]], OffsetKey.Actual[A]]
 
-    def tableBuilder(args: Args, rxa: Resource[F, Transactor[F]], logger: Logger): Resource[F, TempTable.Builder[F]]
+    def tableBuilder(args: Args, xa: Transactor[F], logger: Logger): Resource[F, TempTable.Builder[F]]
     def transactor: Resource[F, Transactor[F]]
     def logger: Logger
     def blocker: Blocker
@@ -91,9 +96,11 @@ object Flow {
       (render, (in: Stream[F, Byte]) => {
         val nestedStream = Stream.resourceWeak {
           for {
-            builder <- tableBuilder(args, transactor, logger)
+            xa <- transactor
+            connection <- Resource.eval(unwrap(classOf[SnowflakeConnection]).transact(xa))
+            builder <- tableBuilder(args, xa, logger)
             region = Region.fromByteStream(in)
-            tempTable <- builder.build(blocker)
+            tempTable <- builder.build(connection, blocker)
           } yield tempTable.ingest(Stream(region))
         }
         nestedStream.flatten
@@ -117,8 +124,10 @@ object Flow {
     private def upsertPipe[A](args: Args): Consume[DataEvent[Byte, *], A] = { events =>
       val nestedStream = Stream.resourceWeak {
         for {
-          builder <- tableBuilder(args, transactor, logger)
-          tempTable <- builder.build(blocker)
+          xa <- transactor
+          connection <- Resource.eval(unwrap(classOf[SnowflakeConnection]).transact(xa))
+          builder <- tableBuilder(args, xa, logger)
+          tempTable <- builder.build(connection, blocker)
           offsets <- Resource.eval(Queue.unbounded[F, Option[OffsetKey.Actual[A]]])
         } yield events.through(Region.regionPipe).through(tempTable.ingest)
       }
