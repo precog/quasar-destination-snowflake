@@ -146,9 +146,9 @@ object StageFile {
         : Pull[F, Path, Unit] = if (size > max) {
       for {
         newFile <- Pull.eval(blocker.delay[F, Path](Files.createTempFile("sf-", ".tmp")))
-        mbCursor <- Stream.resourceWeak(WriteCursor.fromPath[F](newFile, blocker)).pull.peek1
+        cursor <- Stream.resourceWeak(WriteCursor.fromPath[F](newFile, blocker)).pull.lastOrError
         _ <- Pull.output1(currentFile.toAbsolutePath)
-        res <- go(inp, newFile, mbCursor.get._1, 0L)
+        res <- go(inp, newFile, cursor, 0L)
       } yield res
     } else inp.pull.uncons.flatMap {
       case None =>
