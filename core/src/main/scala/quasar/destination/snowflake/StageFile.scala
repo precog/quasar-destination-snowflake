@@ -117,10 +117,15 @@ object StageFile {
       .map { p =>
         retryable(p, blocker, xa, logger, 0, params).evalTap({ _ =>
           file.delete[F](blocker, p)
-        }).handleErrorWith({e => Resource.eval {
-          file.delete[F](blocker, p).attempt >>
-          Sync[F].raiseError(e)
-        }})
+        }).onFinalizeCase({
+          case ExitCase.Completed =>
+            ().pure[F]
+          case ExitCase.Error(e) =>
+            file.delete[F](blocker, p).attempt >>
+            Sync[F].raiseError(e).void
+          case ExitCase.Canceled =>
+            file.delete[F](blocker, p).attempt.void
+        })
       }
 
     def go(inp: Stream[F, Resource[F, StageFile]], acc: Resource[F, List[StageFile]])
