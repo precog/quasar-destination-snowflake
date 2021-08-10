@@ -104,17 +104,14 @@ object StageFile {
         a.pure[Resource[F, *]]
     }
 
-  // It would be much clearer if we could use `_.flatMap(Stream.resourceWeak(StageFile(...)))`
-  // and then `files.compile.resource.toList` but the second finalizes resources before `eval`
   def files[F[_]: ConcurrentEffect: ContextShift: Timer](
-      in: Stream[F, Byte],
       blocker: Blocker,
       xa: Resource[F, Transactor[F]],
       logger: Logger,
       params: Params)
-      : Resource[F, List[StageFile]] = {
-    val resources = in.through(filePipe(params.maxFileSize * 1024L * 1024L, blocker))
-      .map { p =>
+      : Pipe[F, Byte, StageFile] =
+    _.through(filePipe(params.maxFileSize * 1024L * 1024L, blocker))
+      .flatMap { p => Stream.resource {
         retryable(p, blocker, xa, logger, 0, params).evalTap({ _ =>
           file.delete[F](blocker, p)
         }).onFinalizeCase({
@@ -126,22 +123,7 @@ object StageFile {
           case ExitCase.Canceled =>
             file.delete[F](blocker, p).attempt.void
         })
-      }
-
-    def go(inp: Stream[F, Resource[F, StageFile]], acc: Resource[F, List[StageFile]])
-        : Pull[F, Resource[F, List[StageFile]], Unit] = inp.pull.uncons1 flatMap {
-      case None => Pull.output1(acc) >> Pull.done
-      case Some((hd, tail)) =>
-        val newAcc: Resource[F, List[StageFile]] = for {
-          lst <- acc
-          sf <- hd
-        } yield lst :+ sf
-        go(tail, newAcc)
-    }
-    Resource.suspend {
-      go(resources, List.empty[StageFile].pure[Resource[F, *]]).stream.compile.lastOrError
-    }
-  }
+      }}
 
   private def filePipe[F[_]: ConcurrentEffect: ContextShift](
       max: Long,

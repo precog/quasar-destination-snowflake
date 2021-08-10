@@ -35,7 +35,7 @@ import doobie._
 import doobie.implicits._
 import doobie.free.connection.commit
 
-import fs2.{Pipe, Stream}
+import fs2.Pipe
 
 import org.slf4s.Logger
 
@@ -138,18 +138,13 @@ object TempTable {
           new TempTable[F] {
 
             def ingest[A]: Pipe[F, Region[F, A], A] = _.flatMap { (region: Region[F, A]) =>
-              val nestedStream = Stream.force {
-                StageFile.files(region.data, blocker, rxa, logger, stagingParams) use { sfs =>
-                  for {
-                    size <- region.commitCount
-                    _ <-  {
-                      sfs.traverse_(x => execFragment(ingestFragment(x))) >>
-                      persist
-                    }.whenA(size > 0)
-                  } yield region.commits
-                }
-              }
-              nestedStream
+              region.data
+                .through(StageFile.files(blocker, rxa, logger, stagingParams))
+                .evalMap(sf => execFragment(ingestFragment(sf)))
+                .onFinalize({
+                  region.commitCount flatMap { size => persist.whenA(size > 0) }
+                })
+                .drain ++ region.commits
             }
 
             def persist = refMode.get flatMap {
