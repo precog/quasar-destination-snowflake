@@ -117,10 +117,7 @@ object StageFile {
         }).onFinalizeCase({
           case ExitCase.Completed =>
             ().pure[F]
-          case ExitCase.Error(e) =>
-            file.delete[F](blocker, p).attempt >>
-            Sync[F].raiseError(e).void
-          case ExitCase.Canceled =>
+          case _ =>
             file.delete[F](blocker, p).attempt.void
         })
       }}
