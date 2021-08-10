@@ -82,6 +82,7 @@ object SnowflakeDestinationSpec extends EffectfulQSpec[IO] with CsvSupport {
     Account.isEmpty || Password.isEmpty || User.isEmpty || Database.isEmpty || Schema.isEmpty || Warehouse.isEmpty
 
   skipAllIf(shouldSkip)
+
   "initialization" should {
     "fail with malformed config when not decodable" >>* {
       val cfg = Json("malformed" := true)

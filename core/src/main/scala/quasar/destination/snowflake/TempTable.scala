@@ -35,11 +35,9 @@ import doobie._
 import doobie.implicits._
 import doobie.free.connection.commit
 
-import fs2.{Pipe, Stream}
+import fs2.Pipe
 
 import org.slf4s.Logger
-
-import net.snowflake.client.jdbc.SnowflakeConnection
 
 sealed trait TempTable[F[_]] {
   def ingest[A]: Pipe[F, Region[F, A], A]
@@ -47,7 +45,7 @@ sealed trait TempTable[F[_]] {
 
 object TempTable {
   sealed trait Builder[F[_]] {
-    def build(connection: SnowflakeConnection, blocker: Blocker): Resource[F, TempTable[F]]
+    def build(blocker: Blocker): Resource[F, TempTable[F]]
   }
 
   def builder[F[_]: ConcurrentEffect: ContextShift: Timer: MonadResourceErr](
@@ -57,7 +55,7 @@ object TempTable {
       retry: ConnectionIO ~> ConnectionIO,
       args: Flow.Args,
       stagingParams: StageFile.Params,
-      xa: Transactor[F],
+      rxa: Resource[F, Transactor[F]],
       logger: Logger)
       : F[Builder[F]] = {
     val log = Slf4sLogHandler(logger)
@@ -72,13 +70,13 @@ object TempTable {
         fragment.queryWithLogHandler[Int](log).option.map(_.exists(_ === 1))
 
       writeMode match {
-        case WriteMode.Create => existing.transact(xa) flatMap { exists =>
+        case WriteMode.Create => rxa use { xa => existing.transact(xa) flatMap { exists =>
           MonadResourceErr[F].raiseError(
             ResourceError.accessDenied(
               args.path,
               "Create mode is set but table exists already".some,
               none)).whenA(exists)
-        }
+        }}
         case _ =>
           ().pure[F]
       }
@@ -116,10 +114,8 @@ object TempTable {
         retry(fr.updateWithLogHandler(log).run.void)
       }
 
-      def execFragment: Fragment => F[Unit] =
-        runFragment andThen (_.transact(xa))
 
-      def build(connection: SnowflakeConnection, blocker: Blocker): Resource[F, TempTable[F]] = {
+      def build(blocker: Blocker): Resource[F, TempTable[F]] = rxa flatMap { xa =>
         val createFragment = {
           val prefix =
             if (writeMode === WriteMode.Replace)
@@ -132,6 +128,9 @@ object TempTable {
           createColumnFragment
        }
 
+        def execFragment: Fragment => F[Unit] =
+          runFragment andThen (_.transact(xa))
+
         val dropFragment =
           fr"DROP TABLE IF EXISTS" ++ tmpFragment
 
@@ -139,18 +138,13 @@ object TempTable {
           new TempTable[F] {
 
             def ingest[A]: Pipe[F, Region[F, A], A] = _.flatMap { (region: Region[F, A]) =>
-              val nestedStream = Stream.force {
-                StageFile.files(region.data, connection, blocker, xa, logger, stagingParams) use { sfs =>
-                  for {
-                    size <- region.commitCount
-                    _ <-  {
-                      sfs.traverse_(x => execFragment(ingestFragment(x))) >>
-                      persist
-                    }.whenA(size > 0)
-                  } yield region.commits
-                }
-              }
-              nestedStream
+              region.data
+                .through(StageFile.files(blocker, rxa, logger, stagingParams))
+                .evalMap(sf => execFragment(ingestFragment(sf)))
+                .onFinalize({
+                  region.commitCount flatMap { size => persist.whenA(size > 0) }
+                })
+                .drain ++ region.commits
             }
 
             def persist = refMode.get flatMap {
