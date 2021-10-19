@@ -26,8 +26,8 @@ object QueryGen {
   def sanitizeIdentifier(str: String, snowflakeSanitation: Boolean): String =
     if (snowflakeSanitation)
       // replace all non-alphanumeric characters with _ and make all characters uppercase
-      (new Regex("""(\W)""")).replaceAllIn(str, "_").toUpperCase
+      '"' + (new Regex("""(\W)""")).replaceAllIn(str, "_").toUpperCase + '"'
     else
       // Default PG-like sanitation
-      s""""${str.replace("\"", "\"\"")}""""
+      '"' + s""""${str.replace("\"", "\"\"")}"""" + '"'
 }
