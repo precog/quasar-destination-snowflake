@@ -27,21 +27,17 @@ import quasar.connector.destination.{Destination, DestinationModule, PushmiPully
 import quasar.concurrent._
 import quasar.lib.jdbc.destination.WriteMode
 
-import java.util.concurrent.Executors
-
-import scala.concurrent.ExecutionContext
 import scala.util.{Either, Random}
 
 import argonaut._, Argonaut._
 
 import cats.data.EitherT
 import cats.effect._
+import cats.syntax.applicative._
 
-import doobie.hikari.HikariTransactor
+import doobie.util.transactor.Transactor
 
 import org.slf4s.LoggerFactory
-
-import java.util.concurrent.Executors
 
 object SnowflakeDestinationModule extends DestinationModule {
 
@@ -51,7 +47,6 @@ object SnowflakeDestinationModule extends DestinationModule {
     DestinationType("snowflake", 1L)
 
   val SnowflakeDriverFqcn = "net.snowflake.client.jdbc.SnowflakeDriver"
-  val PoolSize: Int = 10
 
   def sanitizeDestinationConfig(config: Json): Json =
     config.as[SnowflakeConfig].result.fold(_ => Json.jEmptyObject, cfg => cfg.sanitize.asJson)
@@ -71,7 +66,6 @@ object SnowflakeDestinationModule extends DestinationModule {
           err))
       }
       poolSuffix <- EitherT.right(Resource.eval(Sync[F].delay(Random.alphanumeric.take(5).mkString)))
-      connectPool <- EitherT.right(boundedPool[F](s"snowflake-dest-connect-$poolSuffix", PoolSize))
       transactPool <- EitherT.right(Blocker.cached[F](s"snowflake-dest-transact-$poolSuffix"))
 
       jdbcUri = cfg.jdbcUri
@@ -85,16 +79,15 @@ object SnowflakeDestinationModule extends DestinationModule {
         QueryGen.sanitizeIdentifier(inp, cfg.sanitizeIdentifiers.getOrElse(true))
 
       val transactor =
-        HikariTransactor.newHikariTransactor[F](
+        Transactor.fromDriverManager[F](
           SnowflakeDriverFqcn,
           jdbcUri,
           cfg.user,
           cfg.password,
-          connectPool,
           transactPool)
 
       new SnowflakeDestination(
-        transactor,
+        transactor.pure[Resource[F, ?]],
         cfg.writeMode.getOrElse(WriteMode.Replace),
         cfg.schema.getOrElse("public"),
         hygienicIdent,
@@ -107,12 +100,4 @@ object SnowflakeDestinationModule extends DestinationModule {
 
     init.value
   }
-
-  private def boundedPool[F[_]: Sync](name: String, threadCount: Int): Resource[F, ExecutionContext] =
-    Resource.make(
-      Sync[F].delay(
-        Executors.newFixedThreadPool(
-          threadCount,
-          NamedDaemonThreadFactory(name))))(es => Sync[F].delay(es.shutdown()))
-      .map(ExecutionContext.fromExecutor(_))
 }
