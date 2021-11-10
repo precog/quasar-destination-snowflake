@@ -34,7 +34,6 @@ lazy val core = project
       "org.slf4s" %% "slf4s-api" % "1.7.25",
       "net.snowflake" % "snowflake-jdbc" % "3.12.4",
       "org.tpolecat" %% "doobie-core" % DoobieVersion,
-      "org.tpolecat" %% "doobie-hikari" % DoobieVersion,
       "com.github.tototoshi" %% "scala-csv" % "1.3.6" % Test,
       "com.precog" %% "quasar-lib-jdbc" % managedVersions.value("precog-quasar-lib-jdbc"),
       "com.precog" %% "quasar-foundation" % quasarPluginQuasarVersion.value,
