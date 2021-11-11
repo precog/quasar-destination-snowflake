@@ -69,12 +69,17 @@ object StageFile {
     }
 
     def ingest(sf: StageFile): F[StageFile] = rxa use { xa =>
-      for {
-        connection <- unwrap(classOf[SnowflakeConnection]).transact(xa)
-        _ <- debug(s"Starting staging to file: @~/${sf.name}")
-        _ <- blocker.delay[F, Unit](connection.uploadStream("@~", "/", inputStream, sf.name, Compressed))
-        _ <- debug(s"Finished staging to file: @~/${sf.name}")
-      } yield sf
+      xa.rawExec.apply {
+        unwrap(classOf[SnowflakeConnection])
+          .foldMap(xa.interpret)
+          .flatMapF { connection =>
+            for {
+              _ <- debug(s"Starting staging to file: @~/${sf.name}")
+              _ <- blocker.delay[F, Unit](connection.uploadStream("@~", "/", inputStream, sf.name, Compressed))
+              _ <- debug(s"Finished staging to file: @~/${sf.name}")
+            } yield sf
+          }
+      }
     }
 
     val release: StageFile => F[Unit] = sf => Sync[F].defer { rxa.use { xa =>
