@@ -27,7 +27,7 @@ object QueryGenSpec extends Specification {
 
   "snowflakeSanitation = true" >> {
     "makes everything uppercase and replace all non-ASCII characters with underscores" >> {
-      QueryGen.sanitizeIdentifier("? foo>>bar123 \";;", true) must_== "__FOO__BAR123____"
+      QueryGen.sanitizeIdentifier("? foo>>bar123 \";;", true) must_== "\"__FOO__BAR123____\""
     }
   }
 }
