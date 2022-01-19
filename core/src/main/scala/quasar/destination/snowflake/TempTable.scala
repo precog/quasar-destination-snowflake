@@ -204,9 +204,9 @@ object TempTable {
 
             def delete(filterColumn: String): ConnectionIO[Unit] = runFragment {
               val whereClause =
-                fr0"tgt." ++ Fragment.const0(filterColumn) ++
+                fr0"tgt." ++ Fragment.const0(hygienicIdent(filterColumn)) ++
                 fr0" = " ++
-                fr0"tmp." ++ Fragment.const0(filterColumn) ++ fr0" "
+                fr0"tmp." ++ Fragment.const0(hygienicIdent(filterColumn)) ++ fr0" "
 
               fr"DELETE FROM" ++ tgtFragment ++ fr" tgt" ++
               fr"USING" ++ tmpFragment ++ fr" tmp" ++
