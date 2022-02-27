@@ -19,7 +19,6 @@ package quasar.destination.snowflake
 import slamdata.Predef._
 
 import argonaut._, Argonaut._
-import quasar.lib.jdbc.destination.WriteMode
 
 import org.specs2.mutable.Specification
 
