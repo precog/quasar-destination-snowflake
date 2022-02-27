@@ -49,7 +49,7 @@ object SnowflakeDestinationModule extends DestinationModule {
   val SnowflakeDriverFqcn = "net.snowflake.client.jdbc.SnowflakeDriver"
 
   def sanitizeDestinationConfig(config: Json): Json =
-    config.as[SnowflakeConfig].result.fold(_ => Json.jEmptyObject, cfg => cfg.sanitize.asJson)
+    config.as[SnowflakeConfig].result.fold(_ => Json.jEmptyObject, cfg => cfg.asJson)
 
   def destination[F[_]: ConcurrentEffect: ContextShift: MonadResourceErr: Timer](
       config: Json,
@@ -62,7 +62,7 @@ object SnowflakeDestinationModule extends DestinationModule {
       cfg <- EitherT.fromEither[Resource[F, ?]](config.as[SnowflakeConfig].result) leftMap {
         case (err, _) => DestinationError.malformedConfiguration((
           destinationType,
-          sanitizeDestinationConfig(config),
+          config,
           err))
       }
       poolSuffix <- EitherT.right(Resource.eval(Sync[F].delay(Random.alphanumeric.take(5).mkString)))
