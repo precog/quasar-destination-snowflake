@@ -39,7 +39,7 @@ final case class SnowflakeConfig(
   stagingFileSizeMb: Option[Int]) { self =>
 
   def sanitize: SnowflakeConfig =
-    self.copy(user = SnowflakeConfig.Redacted, password = SnowflakeConfig.Redacted)
+    self.copy(user = user, password = password)
 
   val retryTransactionTimeout: FiniteDuration =
     retryTransactionTimeoutMs.map(_.milliseconds) getOrElse SnowflakeConfig.DefaultTimeout
