@@ -19,7 +19,6 @@ package quasar.destination.snowflake
 import slamdata.Predef._
 
 import argonaut._, Argonaut._
-import quasar.lib.jdbc.destination.WriteMode
 
 import org.specs2.mutable.Specification
 
@@ -52,27 +51,6 @@ object SnowflakeConfigSpec extends Specification {
           Some(1000),
           Some(20),
           Some(2048)))
-    }
-  }
-
-  "configToUri" >> {
-    "does not include user/password or username in connection string" >> {
-      val testConfig =
-        SnowflakeConfig(
-          Some(WriteMode.Create),
-          "foo",
-          "bar",
-          "secret",
-          "db name",
-          Some("public"),
-          "warehouse name",
-          Some(true),
-          None,
-          None,
-          None)
-
-      testConfig.jdbcUri.contains("secret") must beFalse
-      testConfig.jdbcUri.contains("bar") must beFalse
     }
   }
 }
