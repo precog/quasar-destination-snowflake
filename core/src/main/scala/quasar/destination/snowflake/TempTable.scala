@@ -95,11 +95,17 @@ object TempTable {
     } yield new Builder[F] {
 
       val tmpName = s"precog_tmp_$tbl"
+      val bakName = s"precog_bak_$tbl"
 
       val tmpFragment =
         Fragment.const0(hygienicIdent(schema)) ++
         fr0"." ++
         Fragment.const0(hygienicIdent(tmpName))
+
+      val bakFragment =
+        Fragment.const0(hygienicIdent(schema)) ++
+        fr0"." ++
+        Fragment.const0(hygienicIdent(bakName))
 
       val tgtFragment =
         Fragment.const0(hygienicIdent(schema)) ++
@@ -160,8 +166,9 @@ object TempTable {
                   createTgt >>
                   append
                 case WriteMode.Replace =>
-                  dropTgtIfExists >>
+                  backupTgtIfExists >>
                   rename >>
+                  dropBackupIfExists >>
                   recreate
                 case WriteMode.Truncate =>
                   createTgtIfNotExists >>
@@ -217,8 +224,12 @@ object TempTable {
               fr"CREATE TABLE" ++ tgtFragment ++ createColumnFragment
             }
 
-            def dropTgtIfExists = runFragment {
-              fr"DROP TABLE IF EXISTS" ++ tgtFragment
+            def backupTgtIfExists = runFragment {
+              fr"ALTER TABLE" ++ tgtFragment ++ fr" RENAME TO" ++ bakFragment
+            }
+
+            def dropBackupIfExists = runFragment {
+              fr"DROP TABLE IF EXISTS" ++ bakFragment
             }
 
             def truncateTgt = runFragment {
