@@ -14,7 +14,7 @@ scmInfo in ThisBuild := Some(ScmInfo(
 lazy val publishTestsSettings = Seq(
   Test / packageBin / publishArtifact := true)
 
-val DoobieVersion = "0.8.8"
+val DoobieVersion = "0.9.2"
 
 lazy val root = project
   .in(file("."))
@@ -32,7 +32,7 @@ lazy val core = project
     quasarPluginDestinationFqcn := Some("quasar.destination.snowflake.SnowflakeDestinationModule$"),
     quasarPluginDependencies ++= Seq(
       "org.slf4s" %% "slf4s-api" % "1.7.25",
-      "net.snowflake" % "snowflake-jdbc" % "3.12.4",
+      "net.snowflake" % "snowflake-jdbc" % "3.13.17",
       "org.tpolecat" %% "doobie-core" % DoobieVersion,
       "com.github.tototoshi" %% "scala-csv" % "1.3.6" % Test,
       "com.precog" %% "quasar-lib-jdbc" % managedVersions.value("precog-quasar-lib-jdbc"),
