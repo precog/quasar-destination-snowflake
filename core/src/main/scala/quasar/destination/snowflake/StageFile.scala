@@ -30,6 +30,7 @@ import fs2.{Pipe, Pull, Stream}
 import fs2.io.file
 import fs2.io.file.WriteCursor
 
+import java.io.InputStream
 import java.nio.file._
 import java.util.UUID
 import net.snowflake.client.jdbc.SnowflakeConnection
@@ -56,8 +57,10 @@ object StageFile {
       logger: Logger)
       : Resource[F, StageFile] = {
 
-    def inputStream =
-      Files.newInputStream(input)
+    val inputStream =
+      Resource.make(
+        blocker.delay[F, InputStream](Files.newInputStream(input)))(
+        is => blocker.delay[F, Unit](is.close()))
 
     val debug = (s: String) => Sync[F].delay(logger.debug(s))
 
@@ -73,11 +76,13 @@ object StageFile {
         unwrap(classOf[SnowflakeConnection])
           .foldMap(xa.interpret)
           .flatMapF { connection =>
-            for {
-              _ <- debug(s"Starting staging to file: @~/${sf.name}")
-              _ <- blocker.delay[F, Unit](connection.uploadStream("@~", "/", inputStream, sf.name, Compressed))
-              _ <- debug(s"Finished staging to file: @~/${sf.name}")
-            } yield sf
+            inputStream.use { istream =>
+              for {
+                _ <- debug(s"Starting staging to file: @~/${sf.name}")
+                _ <- blocker.delay[F, Unit](connection.uploadStream("@~", "/", istream, sf.name, Compressed))
+                _ <- debug(s"Finished staging to file: @~/${sf.name}")
+              } yield sf
+            }
           }
       }
     }
