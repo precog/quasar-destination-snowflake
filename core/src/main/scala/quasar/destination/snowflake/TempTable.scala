@@ -18,6 +18,8 @@ package quasar.destination.snowflake
 
 import slamdata.Predef._
 
+import java.lang.Throwable
+
 import quasar.api.{Column, ColumnType}
 import quasar.api.resource._
 import quasar.connector.{MonadResourceErr, ResourceError}
@@ -26,6 +28,7 @@ import quasar.lib.jdbc.Slf4sLogHandler
 import quasar.lib.jdbc.destination.WriteMode
 
 import cats.~>
+import cats.MonadError
 import cats.data.ValidatedNel
 import cats.effect._
 import cats.effect.concurrent.Ref
@@ -224,9 +227,9 @@ object TempTable {
               fr"CREATE TABLE" ++ tgtFragment ++ createColumnFragment
             }
 
-            def backupTgtIfExists = runFragment {
-              fr"ALTER TABLE" ++ tgtFragment ++ fr" RENAME TO" ++ bakFragment
-            }
+            def backupTgtIfExists =
+              MonadError[ConnectionIO, Throwable].handleError[Unit](
+                runFragment(fr"ALTER TABLE" ++ tgtFragment ++ fr" RENAME TO" ++ bakFragment))(_ => ()) // ignore errors
 
             def dropBackupIfExists = runFragment {
               fr"DROP TABLE IF EXISTS" ++ bakFragment
