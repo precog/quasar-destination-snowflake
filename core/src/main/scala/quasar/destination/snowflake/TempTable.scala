@@ -229,7 +229,7 @@ object TempTable {
 
             def backupTgtIfExists =
               MonadError[ConnectionIO, Throwable].handleError[Unit](
-                runFragment(fr"ALTER TABLE" ++ tgtFragment ++ fr" RENAME TO" ++ bakFragment))(_ => ()) // ignore errors
+                runFragment(fr"ALTER TABLE IF EXISTS" ++ tgtFragment ++ fr" RENAME TO" ++ bakFragment))(_ => ()) // ignore errors
 
             def dropBackupIfExists = runFragment {
               fr"DROP TABLE IF EXISTS" ++ bakFragment
